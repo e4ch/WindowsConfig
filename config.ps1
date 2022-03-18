@@ -2,7 +2,7 @@
 ## This script configures typical configuration on default Windows installations according to my personal  ##
 ## requirements; configurations that I always need to change every time I log in to a new Windows machine. ##
 ## copyright 2022 Eric Bauersachs, free for non-commercial usage, changes possibile without notification   ##
-## version 3, 2022-03-18                                                                                   ##
+## version 4, 2022-03-18																				   ##
 #############################################################################################################
 
 ##################################
@@ -53,10 +53,10 @@ function LogHelper{
 	)
 	process{
 		if($ret -eq 2){
-			LogInfoDone "$FunctionalityName was successfully $ActionType."
+			LogInfoDone "$($FunctionalityName) was successfully $($ActionType)."
 		}
 		if($ret -eq 1){
-			LogInfo "$FunctionalityName was already $ActionType."
+			LogInfo "$($FunctionalityName) was already $($ActionType)."
 		}
 	}
 }
@@ -69,7 +69,7 @@ function Get-CompressedByteArray {
 	# from https://gist.github.com/marcgeld/bfacfd8d70b34fdf1db0022508b02aca
 	[CmdletBinding()]
 	Param (
-	[Parameter(Mandatory,ValueFromPipeline,ValueFromPipelineByPropertyName)]
+		[Parameter(Mandatory,ValueFromPipeline,ValueFromPipelineByPropertyName)]
 		[byte[]] $byteArray = $(Throw("-byteArray is required"))
 	)
 	Process {
@@ -120,6 +120,23 @@ function WaitForKeyPressIfNotInIse{
 	if(-not $psISE){
 		LogInfo "Press any key to finish."
 		$Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown') | Out-Null
+	}
+}
+
+function CopyFile{
+	Param (
+		[Parameter(Mandatory)] [String] $SourceFile,
+		[Parameter(Mandatory)] [String] $DestinationFolder
+	)
+	Process {
+		$error = "error"
+		try{
+			Copy-Item $SourceFile -Destination $DestinationFolder -errorAction stop | Out-Null
+			$error = ""
+		}catch{
+			$error = $_.Exception.Message
+		}
+		$error
 	}
 }
 
@@ -315,26 +332,50 @@ function ConfigureSendToNotepad{
 	# for localization, check: HKEY_CLASSES_ROOT\Applications\notepad.exe\shell\edit\command -> %SystemRoot%\system32**kladblok.exe** %1
 	# TODO: Currently only English verified
 	$fileName = "Notepad.lnk" #or Editor.lnk etc.
-	$srcFile=Join-Path -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Windows Accessories\" -ChildPath $fileName
-	$destFolder=Join-Path -Path $env:appdata -ChildPath "\Microsoft\Windows\SendTo\"
-	$destFile=Join-Path -Path $destFolder -ChildPath $fileName
-	if(Test-Path -Path $destFile -PathType Leaf){
-		LogInfo "The Notepad shortcut is already present in the user's SentTo folder."
-	}else{
-		Copy-Item $srcFile -Destination $destFolder
-		LogInfoDone "The Notepad shortcut was successfully copied to the user's SentTo folder."
-	}
-	$destNewUser="C:\Users\Default\AppData\Roaming\Microsoft\Windows\SendTo"
-	$destNewUserFile=Join-Path -Path $destNewUser -ChildPath $fileName
-	if(Test-Path -Path $destNewUserFile -PathType Leaf){
-		LogInfo "The Notepad shortcut is already present in the Default user's SentTo folder."
-	}else{
-		if(Test-IsAdmin){
-			Copy-Item $srcFile -Destination $destNewUser
-			LogInfoDone "The Notepad shortcut was successfully copied to the Default user's SentTo folder."
-		}else{
-			LogWarn "As non-admin, cannot configure SendTo Notepad for new users."
+	$RegKey = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\ShellCompatibility\InboxApp')
+	$NumFound = 0
+	$RegKey.PSObject.Properties | ForEach-Object {
+		if($_.Name -like '*_Notepad_lnk_amd64.lnk' -and $_.TypeNameOfValue -eq 'System.String'){
+			# TODO: We have checked TypeNameOfValue, but not if it's really REG_EXPAND_SZ.
+			$NumFound++
+			$FoundName = $_.Name
+			$FoundExpandSz = $_.Value
+			LogInfo "Found $($FoundName): $($FoundExpandSz)"
 		}
+	}
+	if($NumFound -eq 1){
+		# TODO: We should probably expand this string, but it did never contain anything to expand.
+		$srcFile = $FoundExpandSz
+		$destFolder=Join-Path -Path $env:appdata -ChildPath "\Microsoft\Windows\SendTo\"
+		$destFile=Join-Path -Path $destFolder -ChildPath $fileName
+		if(Test-Path -Path $destFile -PathType Leaf){
+			LogInfo "The Notepad shortcut is already present in the user's SentTo folder."
+		}else{
+			$RetError = CopyFile $srcFile $destFolder
+			if($RetError -eq ''){
+				LogInfoDone "The Notepad shortcut was successfully copied to the user's SentTo folder."
+			}else{
+				LogError "The Notepad shortcut was not copied to the user's SentTo folder. Error: $($RetError)"
+			}
+		}
+		$destNewUser="C:\Users\Default\AppData\Roaming\Microsoft\Windows\SendTo"
+		$destNewUserFile=Join-Path -Path $destNewUser -ChildPath $fileName
+		if(Test-Path -Path $destNewUserFile -PathType Leaf){
+			LogInfo "The Notepad shortcut is already present in the Default user's SentTo folder."
+		}else{
+			if(Test-IsAdmin){
+				$RetError = CopyFile $srcFile $destNewUser
+				if($RetError -eq ''){
+					LogInfoDone "The Notepad shortcut was successfully copied to the Default user's SentTo folder."
+				}else{
+					LogError "The Notepad shortcut was not copied to the Default user's SentTo folder. Error: $($RetError)"
+				}
+			}else{
+				LogWarn "As non-admin, cannot configure SendTo Notepad for new users."
+			}
+		}
+	}else{
+		LogError "Cannot evaluate location of Notepad.lnk"
 	}
 }
 
@@ -413,85 +454,89 @@ function ConfigureUacMaxLevel{
 }
 
 function MakeCTemp{
-    # 1. folder itself
-    $folderPathName = "C:\TEMP\"
-    $folderName = "TEMP"
-    $isAdmin = Test-IsAdmin
+	# 1. folder itself
+	$folderPathName = "C:\TEMP\"
+	$folderName = "TEMP"
+	$isAdmin = Test-IsAdmin
 	$pathAlreadyExists = Test-Path -Path $folderPathName
-    if($pathAlreadyExists){
-        LogInfo "Folder $folderPathName already exists."
-        $existingFolderName = Get-ChildItem C:\ -filter $folderName -Directory | % { $_.fullname + "\" }
-        if($existingFolderName -ceq $folderPathName){
-            LogInfo "Folder $folderPathName casing also matches."
-        }else{
-            $tmp = [IO.Path]::GetRandomFileName()
-            $aux1 = Rename-Item -Path $existingFolderName -NewName $tmp -Force *>&1
-            if($aux1.Length -eq 0){
-                Rename-Item -Path "C:\$tmp" -NewName $folderName -Force
-                LogInfoDone "Folder $folderPathName casing has been fixed."
-            }else{
-                LogError "Folder $folderPathName renaming of wrong casing failed."
-            }
-        }
-    }else{
-        if($isAdmin){
-            New-Item -Path $folderPathName -ItemType Directory | Out-Null
-            LogInfoDone "Folder $folderPathName successfully created."
-        }else{
-            LogWarn "$folderPathName folder can only be created when run elevated."
-        }
-    }
+	if($pathAlreadyExists){
+		LogInfo "Folder $folderPathName already exists."
+		$existingFolderName = Get-ChildItem C:\ -filter $folderName -Directory | % { $_.fullname + "\" }
+		if($existingFolderName -ceq $folderPathName){
+			LogInfo "Folder $folderPathName casing also matches."
+		}else{
+			$tmp = [IO.Path]::GetRandomFileName()
+			$aux1 = Rename-Item -Path $existingFolderName -NewName $tmp -Force *>&1
+			if($aux1.Length -eq 0){
+				Rename-Item -Path "C:\$tmp" -NewName $folderName -Force
+				LogInfoDone "Folder $($folderPathName) casing has been fixed."
+			}else{
+				LogError "Folder $($folderPathName) renaming of wrong casing failed."
+			}
+		}
+	}else{
+		if($isAdmin){
+			New-Item -Path $folderPathName -ItemType Directory | Out-Null
+			LogInfoDone "Folder $($folderPathName) successfully created."
+		}else{
+			LogWarn "$($folderPathName) folder can only be created when run elevated."
+		}
+	}
 
-    # 2. permissions
-    $NewAcl = Get-Acl -Path $folderPathName
-    $Rights = $NewAcl.GetAccessRules($true, $true, [System.Security.Principal.NTAccount])
-    $hasAnyInherited = $false
-    $foundWrong = $false
-    $foundUsers = $false
-    $foundSystem = $false
-    $foundAdmins = $false
-    foreach($r in $Rights){
-        if($r.IsInherited){
-            $hasAnyInherited = $true
-        }else{
-            if($r.AccessControlType -ne "Allow" -or $r.InheritanceFlags -ne "ContainerInherit, ObjectInherit" -or $r.PropagationFlags -ne "None"){
-                $foundWrong = $true
-            }else{
-                $foundSomething = $false
-                if($r.FileSystemRights -eq "Modify, Synchronize" -and $r.IdentityReference -eq "BUILTIN\Users"){
-                    $foundSomething = $true
-                    $foundUsers = $true
-                }
-                if($r.FileSystemRights -eq "FullControl" -and $r.IdentityReference -eq "NT AUTHORITY\SYSTEM"){
-                    $foundSomething = $true
-                    $foundSystem = $true
-                }
-                if($r.FileSystemRights -eq "FullControl" -and $r.IdentityReference -eq "BUILTIN\Administrators"){
-                    $foundSomething = $true
-                    $foundAdmins = $true
-                }
-                if(-not $foundSomething){
-                    $foundWrong = $true
-                }
-            }
-        }
-    }
-    if(-not $foundWrong -and -not $hasAnyInherited -and $foundUsers -and $foundSystem -and $foundAdmins){
-        LogInfo "Permissions on $folderPathName are already correct."
-    }else{
-        # Set Permissions
-        if($isAdmin){
-            $NewAcl.Access | %{$NewAcl.RemoveAccessRule($_)} | Out-Null
-            $NewAcl.SetAccessRuleProtection($true, $false)
-            $NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("BUILTIN\Administrators", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")))
-            $NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("SYSTEM", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")))
-            $NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("BUILTIN\Users", "Modify", "ContainerInherit, ObjectInherit", "None", "Allow")))
-            Set-Acl -Path $folderPathName -AclObject $NewAcl
-            LogInfoDone "Permissions on $folderPathName successfully configured."
-        }else{
-            LogWarn "Folder $folderPathName permissions can only be fixed when run elevated."
-        }
-    }
+	# 2. permissions
+	if(Test-Path -Path $folderPathName){
+		$NewAcl = Get-Acl -Path $folderPathName
+		$Rights = $NewAcl.GetAccessRules($true, $true, [System.Security.Principal.NTAccount])
+		$hasAnyInherited = $false
+		$foundWrong = $false
+		$foundUsers = $false
+		$foundSystem = $false
+		$foundAdmins = $false
+		foreach($r in $Rights){
+			if($r.IsInherited){
+				$hasAnyInherited = $true
+			}else{
+				if($r.AccessControlType -ne "Allow" -or $r.InheritanceFlags -ne "ContainerInherit, ObjectInherit" -or $r.PropagationFlags -ne "None"){
+					$foundWrong = $true
+				}else{
+					$foundSomething = $false
+					if($r.FileSystemRights -eq "Modify, Synchronize" -and $r.IdentityReference -eq "BUILTIN\Users"){
+						$foundSomething = $true
+						$foundUsers = $true
+					}
+					if($r.FileSystemRights -eq "FullControl" -and $r.IdentityReference -eq "NT AUTHORITY\SYSTEM"){
+						$foundSomething = $true
+						$foundSystem = $true
+					}
+					if($r.FileSystemRights -eq "FullControl" -and $r.IdentityReference -eq "BUILTIN\Administrators"){
+						$foundSomething = $true
+						$foundAdmins = $true
+					}
+					if(-not $foundSomething){
+						$foundWrong = $true
+					}
+				}
+			}
+		}
+		if(-not $foundWrong -and -not $hasAnyInherited -and $foundUsers -and $foundSystem -and $foundAdmins){
+			LogInfo "Permissions on $($folderPathName) are already correct."
+		}else{
+			# Set Permissions
+			if($isAdmin){
+				$NewAcl.Access | %{$NewAcl.RemoveAccessRule($_)} | Out-Null
+				$NewAcl.SetAccessRuleProtection($true, $false)
+				$NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("BUILTIN\Administrators", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")))
+				$NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("SYSTEM", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")))
+				$NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("BUILTIN\Users", "Modify", "ContainerInherit, ObjectInherit", "None", "Allow")))
+				Set-Acl -Path $folderPathName -AclObject $NewAcl
+				LogInfoDone "Permissions on $folderPathName successfully configured."
+			}else{
+				LogWarn "Folder $($folderPathName) permissions can only be fixed when run elevated."
+			}
+		}
+	}else{
+		LogWarn "Cannot check permissions on non-existent folder $($folderPathName)."
+	}
 }
 
 ##########
@@ -501,7 +546,7 @@ function MakeCTemp{
 $ver_major=[Environment]::OSVersion.Version.Major
 #[System.Environment]::Is64BitOperatingSystem
 $ostxt=(Get-WmiObject -Class Win32_OperatingSystem).Caption
-LogInfo "System: $ostxt"
+LogInfo "System: $($ostxt)"
 if($ver_major -ne 10){
 	LogWarn "Not tested with this version of Windows! Running anyway."
 }
