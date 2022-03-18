@@ -2,7 +2,7 @@
 ## This script configures typical configuration on default Windows installations according to my personal  ##
 ## requirements; configurations that I always need to change every time I log in to a new Windows machine. ##
 ## copyright 2022 Eric Bauersachs, free for non-commercial usage, changes possibile without notification   ##
-## version 4, 2022-03-18																				   ##
+## version 5, 2022-03-18                                                                                   ##
 #############################################################################################################
 
 ##################################
@@ -74,9 +74,9 @@ function Get-CompressedByteArray {
 	)
 	Process {
 		Write-Verbose "Get-CompressedByteArray"
-	   	[System.IO.MemoryStream] $output = New-Object System.IO.MemoryStream
+		[System.IO.MemoryStream] $output = New-Object System.IO.MemoryStream
 		$gzipStream = New-Object System.IO.Compression.GzipStream $output, ([IO.Compression.CompressionMode]::Compress)
-	  	$gzipStream.Write( $byteArray, 0, $byteArray.Length )
+		$gzipStream.Write( $byteArray, 0, $byteArray.Length )
 		$gzipStream.Close()
 		$output.Close()
 		$tmp = $output.ToArray()
@@ -349,26 +349,26 @@ function ConfigureSendToNotepad{
 		$destFolder=Join-Path -Path $env:appdata -ChildPath "\Microsoft\Windows\SendTo\"
 		$destFile=Join-Path -Path $destFolder -ChildPath $fileName
 		if(Test-Path -Path $destFile -PathType Leaf){
-			LogInfo "The Notepad shortcut is already present in the user's SentTo folder."
+			LogInfo "The Notepad shortcut is already present in the user's SendTo folder."
 		}else{
 			$RetError = CopyFile $srcFile $destFolder
 			if($RetError -eq ''){
-				LogInfoDone "The Notepad shortcut was successfully copied to the user's SentTo folder."
+				LogInfoDone "The Notepad shortcut was successfully copied to the user's SendTo folder."
 			}else{
-				LogError "The Notepad shortcut was not copied to the user's SentTo folder. Error: $($RetError)"
+				LogError "The Notepad shortcut was not copied to the user's SendTo folder. Error: $($RetError)"
 			}
 		}
 		$destNewUser="C:\Users\Default\AppData\Roaming\Microsoft\Windows\SendTo"
 		$destNewUserFile=Join-Path -Path $destNewUser -ChildPath $fileName
 		if(Test-Path -Path $destNewUserFile -PathType Leaf){
-			LogInfo "The Notepad shortcut is already present in the Default user's SentTo folder."
+			LogInfo "The Notepad shortcut is already present in the Default user's SendTo folder."
 		}else{
 			if(Test-IsAdmin){
 				$RetError = CopyFile $srcFile $destNewUser
 				if($RetError -eq ''){
-					LogInfoDone "The Notepad shortcut was successfully copied to the Default user's SentTo folder."
+					LogInfoDone "The Notepad shortcut was successfully copied to the Default user's SendTo folder."
 				}else{
-					LogError "The Notepad shortcut was not copied to the Default user's SentTo folder. Error: $($RetError)"
+					LogError "The Notepad shortcut was not copied to the Default user's SendTo folder. Error: $($RetError)"
 				}
 			}else{
 				LogWarn "As non-admin, cannot configure SendTo Notepad for new users."
