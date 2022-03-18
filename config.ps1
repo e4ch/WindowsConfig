@@ -2,7 +2,7 @@
 ## This script configures typical configuration on default Windows installations according to my personal  ##
 ## requirements; configurations that I always need to change every time I log in to a new Windows machine. ##
 ## copyright 2022 Eric Bauersachs, free for non-commercial usage, changes possibile without notification   ##
-## version 2, 2022-02-07                                                                                   ##
+## version 3, 2022-03-18                                                                                   ##
 #############################################################################################################
 
 ##################################
@@ -292,15 +292,17 @@ function SetChitzBackground{
 	if($ret1 -eq 1 -or $ret1 -eq 2){
 		$ret2 = RegSetSZMustExist "HKCU:\Control Panel\Desktop" "WallPaper" (Join-Path -Path $env:windir -ChildPath "CHITZ.BMP").ToLower()
 		$ret3 = RegSetSZMustExist "HKCU:\Control Panel\Desktop" "WallPaperStyle" "0"
-		if($ret2 -eq 1 -and $ret3 -eq 1){
-			LogInfo "Both Wallpaper settings were already configured."
+		$ret4 = RegSetSZMustExist "HKCU:\Control Panel\Desktop" "TileWallpaper" "1"
+		if($ret2 -eq 1 -and $ret3 -eq 1 -and $ret4 -eq 1){
+			LogInfo "All Wallpaper settings were already configured."
 		}else{
-			if($ret2 -eq 2 -and $ret3 -eq 2){
-				LogInfoDone "Both Wallpaper settings were successfully configured."
+			if($ret2 -eq 2 -and $ret3 -eq 2 -and $ret4 -eq 2){
+				LogInfoDone "All Wallpaper settings were successfully configured."
 			}else{
 				# mixed results, give individual details
 				LogHelper $ret2 "Wallpaper setting" "configured"
 				LogHelper $ret3 "WallPaperStyle setting" "configured"
+				LogHelper $ret3 "TileWallpaper setting" "configured"
 			}
 		}
 	}else{
@@ -313,7 +315,7 @@ function ConfigureSendToNotepad{
 	# for localization, check: HKEY_CLASSES_ROOT\Applications\notepad.exe\shell\edit\command -> %SystemRoot%\system32**kladblok.exe** %1
 	# TODO: Currently only English verified
 	$fileName = "Notepad.lnk" #or Editor.lnk etc.
-	$srcFile=Join-Path -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Accessories\" -ChildPath $fileName
+	$srcFile=Join-Path -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Windows Accessories\" -ChildPath $fileName
 	$destFolder=Join-Path -Path $env:appdata -ChildPath "\Microsoft\Windows\SendTo\"
 	$destFile=Join-Path -Path $destFolder -ChildPath $fileName
 	if(Test-Path -Path $destFile -PathType Leaf){
@@ -445,7 +447,7 @@ function MakeCTemp{
     $Rights = $NewAcl.GetAccessRules($true, $true, [System.Security.Principal.NTAccount])
     $hasAnyInherited = $false
     $foundWrong = $false
-    $foundAuthUsers = $false
+    $foundUsers = $false
     $foundSystem = $false
     $foundAdmins = $false
     foreach($r in $Rights){
@@ -456,9 +458,9 @@ function MakeCTemp{
                 $foundWrong = $true
             }else{
                 $foundSomething = $false
-                if($r.FileSystemRights -eq "Modify, Synchronize" -and $r.IdentityReference -eq "NT AUTHORITY\Authenticated Users"){
+                if($r.FileSystemRights -eq "Modify, Synchronize" -and $r.IdentityReference -eq "BUILTIN\Users"){
                     $foundSomething = $true
-                    $foundAuthUsers = $true
+                    $foundUsers = $true
                 }
                 if($r.FileSystemRights -eq "FullControl" -and $r.IdentityReference -eq "NT AUTHORITY\SYSTEM"){
                     $foundSomething = $true
@@ -468,16 +470,13 @@ function MakeCTemp{
                     $foundSomething = $true
                     $foundAdmins = $true
                 }
-                if($r.FileSystemRights -eq "ReadAndExecute, Synchronize" -and $r.IdentityReference -eq "BUILTIN\Users"){ # This one is optional; not wrong if there
-                    $foundSomething = $true
-                }
                 if(-not $foundSomething){
                     $foundWrong = $true
                 }
             }
         }
     }
-    if(-not $foundWrong -and -not $hasAnyInherited -and $foundAuthUsers -and $foundSystem -and $foundAdmins){
+    if(-not $foundWrong -and -not $hasAnyInherited -and $foundUsers -and $foundSystem -and $foundAdmins){
         LogInfo "Permissions on $folderPathName are already correct."
     }else{
         # Set Permissions
@@ -486,7 +485,7 @@ function MakeCTemp{
             $NewAcl.SetAccessRuleProtection($true, $false)
             $NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("BUILTIN\Administrators", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")))
             $NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("SYSTEM", "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")))
-            $NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("Authenticated Users", "Modify", "ContainerInherit, ObjectInherit", "None", "Allow")))
+            $NewAcl.SetAccessRule((New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList ("BUILTIN\Users", "Modify", "ContainerInherit, ObjectInherit", "None", "Allow")))
             Set-Acl -Path $folderPathName -AclObject $NewAcl
             LogInfoDone "Permissions on $folderPathName successfully configured."
         }else{
@@ -513,7 +512,7 @@ $globalShouldRestartExplorer = $false
 DisableWindowSnapping
 DisableAccessibilityEnablement
 EnableAccentColorOnWindowTitlebar
-SetChitzBackground
+#SetChitzBackground
 #TODO: Calc to Scientific -> now in a Windows Store App
 #TODO: Paint to default size 5x5 -> now in a Windows Store App
 #TODO: Task Manager to Details view and Details Tab -> no easy way to do this, as all data is in one blob
